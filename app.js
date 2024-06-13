@@ -1,12 +1,10 @@
-// app.js
-
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 
+const mongoose = require("mongoose");
 const express = require("express");
 const app = express();
-const mongoose = require("mongoose");
 const path = require("path");
 const methodOverride = require("method-override");
 const ejsMate = require("ejs-mate");
@@ -19,30 +17,31 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const User = require("./models/user.js");
 const MongoStore = require("connect-mongo");
 
-const wrapAsync = require('./utils/wrapAsync'); // Import wrapAsync function
-
 const listingRouter = require("./routes/listing.js");
 const reviewRouter = require("./routes/review.js");
 const userRouter = require("./routes/user.js");
 
 const dbUrl = process.env.ATLASDB_URL || 'mongodb://localhost:27017/mydatabase';
 
-main()
-  .then(() => {
-    console.log("Connected to DB");
-  })
-  .catch((err) => {
-    console.error("Error connecting to MongoDB", err);
-    process.exit(1); // Exit the process if MongoDB connection fails
-  });
+// Set Mongoose options before connecting
+mongoose.set('strictQuery', false); // Suppress strictQuery deprecation warning
 
 async function main() {
-  await mongoose.connect(dbUrl, {
-    useUnifiedTopology: true,
-    useNewUrlParser: true,
-    useCreateIndex: true // Ensure index creation to avoid deprecation warnings
-  });
+  try {
+    await mongoose.connect(dbUrl, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      // Remove `useCreateIndex` as it is deprecated
+      // useCreateIndex: true
+    });
+    console.log("Connected to MongoDB");
+  } catch (err) {
+    console.error("Error connecting to MongoDB", err);
+    process.exit(1); // Exit the process if MongoDB connection fails
+  }
 }
+
+main();
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -117,10 +116,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Example usage of wrapAsync with route handlers
 app.use("/listings", listingRouter);
-app.use("/listings/:id/reviews", wrapAsync(reviewRouter)); // Wrap reviewRouter with wrapAsync
-app.use("/", wrapAsync(userRouter)); // Wrap userRouter with wrapAsync
+app.use("/listings/:id/reviews", reviewRouter);
+app.use("/", userRouter);
 
 app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })

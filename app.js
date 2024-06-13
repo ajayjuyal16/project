@@ -1,3 +1,5 @@
+// app.js
+
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
@@ -17,6 +19,8 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const User = require("./models/user.js");
 const MongoStore = require("connect-mongo");
 
+const wrapAsync = require('./utils/wrapAsync'); // Import wrapAsync function
+
 const listingRouter = require("./routes/listing.js");
 const reviewRouter = require("./routes/review.js");
 const userRouter = require("./routes/user.js");
@@ -28,7 +32,7 @@ main()
     console.log("Connected to DB");
   })
   .catch((err) => {
-    console.error("Error connecting to MooDB", err);
+    console.error("Error connecting to MongoDB", err);
     process.exit(1); // Exit the process if MongoDB connection fails
   });
 
@@ -79,7 +83,7 @@ passport.use(new LocalStrategy(User.authenticate()));
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://localhost:8080/auth/google/callback"
+  callbackURL: "http://localhost:8080/auth/google/callback" // Update this URL for production
 }, async (token, tokenSecret, profile, done) => {
   try {
     let user = await User.findOne({ googleId: profile.id });
@@ -97,8 +101,14 @@ passport.use(new GoogleStrategy({
   }
 }));
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  const user = await User.findById(id);
+  done(null, user);
+});
 
 app.use((req, res, next) => {
   res.locals.success = req.flash("success");
@@ -107,9 +117,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// Example usage of wrapAsync with route handlers
 app.use("/listings", listingRouter);
-app.use("/listings/:id/reviews", reviewRouter);
-app.use("/", userRouter);
+app.use("/listings/:id/reviews", wrapAsync(reviewRouter)); // Wrap reviewRouter with wrapAsync
+app.use("/", wrapAsync(userRouter)); // Wrap userRouter with wrapAsync
 
 app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
@@ -118,7 +129,7 @@ app.get('/auth/google',
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
-    res.redirect('/dashboard');
+    res.redirect('/dashboard'); // Redirect to the desired route after successful login
   }
 );
 

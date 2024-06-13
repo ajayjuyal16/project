@@ -1,4 +1,4 @@
-﻿const Listing=require("../models/listing");
+﻿﻿const Listing=require("../models/listing");
 const mbxGeocoding = require('@mapbox/mapbox-sdk/services/geocoding');
 const mapToken= process.env.MAP_TOKEN;
 const geocodingClient = mbxGeocoding({ accessToken: mapToken });
@@ -46,7 +46,7 @@ module.exports.createListing=async(req,res,next)=>{
    req.flash("success","New Listing Created!");
    res.redirect("/listings");
 
- 
+
 };
 module.exports.renderEditForm=async (req,res)=>{
   let{id}=req.params;

@@ -1,146 +1,118 @@
-if (process.env.NODE_ENV !== "production") {
+if(process.env.NODE_ENV !="production"){
   require("dotenv").config();
 }
-
-const mongoose = require("mongoose");
 const express = require("express");
 const app = express();
-const path = require("path");
-const methodOverride = require("method-override");
-const ejsMate = require("ejs-mate");
-const ExpressError = require("./utils/ExpressError.js");
-const session = require("express-session");
+const mongoose = require("mongoose");
+const path= require("path");
+const methodOverride=require("method-override");
+const ejsMate=require("ejs-mate");
+const ExpressError= require("./utils/ExpressError.js");
+const session=require("express-session");
+const MongoStore=require("connect-mongo");
 const flash = require("connect-flash");
-const passport = require("passport");
-const LocalStrategy = require("passport-local");
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const User = require("./models/user.js");
-const MongoStore = require("connect-mongo");
+const passport=require("passport");
+const LocalStrategy=  require("passport-local");
+const User=require("./models/user.js");
 
-const listingRouter = require("./routes/listing.js");
-const reviewRouter = require("./routes/review.js");
-const userRouter = require("./routes/user.js");
+const listingRouter= require("./routes/listing.js");
+const reviewRouter= require("./routes/review.js");
+const userRouter= require("./routes/user.js");
 
-const dbUrl = process.env.ATLASDB_URL || 'mongodb://localhost:27017/mydatabase';
 
-// Set Mongoose options before connecting
-mongoose.set('strictQuery', false); // Suppress strictQuery deprecation warning
+
+const dbUrl=process.env.ATLASDB_URL;
+
+main()
+  .then(() => {
+    console.log("Connected to DB");
+  })
+  .catch((err) => {
+    console.log("Error connecting to MongoDb", err);
+    throw err;
+  });
 
 async function main() {
-  try {
-    await mongoose.connect(dbUrl, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      // Remove `useCreateIndex` as it is deprecated
-      // useCreateIndex: true
-    });
-    console.log("Connected to MongoDB");
-  } catch (err) {
-    console.error("Error connecting to MongoDB", err);
-    process.exit(1); // Exit the process if MongoDB connection fails
-  }
+await mongoose.connect(dbUrl);
 }
-
-main();
-
-app.set("view engine", "ejs");
-app.set("views", path.join(__dirname, "views"));
-app.use(express.urlencoded({ extended: true }));
+app.set("view engine","ejs");
+app.set("views",path.join(__dirname,"views"));
+app.use(express.urlencoded({extended:true}));
 app.use(methodOverride("_method"));
-app.engine('ejs', ejsMate);
-app.use(express.static(path.join(__dirname, "public")));
+app.engine('ejs',ejsMate);
+app.use(express.static(path.join(__dirname,"/public")));
 
-const store = MongoStore.create({
-  mongoUrl: dbUrl,
-  touchAfter: 24 * 3600 // Time period in seconds
+const store=MongoStore.create({
+  mongoUrl:dbUrl,
+  crypto:{
+    secret:process.env.SECRET,
+  },
+  touchAfter:24*3600,
 });
 
-app.use(session({
-  name: 'session',
-  secret: process.env.SECRET,
-  store: store,
-  resave: false,
-  saveUninitialized: true,
-  cookie: {
+store.on("error",()=>{
+  console.log("ERROR in MONGO SESSION STore",err);
+})
+
+const sessionOptions={
+  store,
+  secret:process.env.SECRET,
+  resave:false,
+  saveUninitialized:true,
+  cookie:{
+    expires:Date.now() + 7*24*60*60*1000,
+    maxAge:7*24*60*60*1000,
     httpOnly: true,
-    expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  }
-}));
+  },
+};
 
-store.on("error", (err) => {
-  console.log("ERROR in MONGO SESSION Store", err);
-});
 
+//app.get("/", (req, res) => {
+ // res.send("Hi, I'm root");
+//});
+
+app.use(session(sessionOptions));
 app.use(flash());
 
 app.use(passport.initialize());
 app.use(passport.session());
-
 passport.use(new LocalStrategy(User.authenticate()));
 
-passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://localhost:8080/auth/google/callback" // Update this URL for production
-}, async (token, tokenSecret, profile, done) => {
-  try {
-    let user = await User.findOne({ googleId: profile.id });
-    if (!user) {
-      user = new User({
-        googleId: profile.id,
-        username: profile.displayName,
-        email: profile.emails[0].value
-      });
-      await user.save();
-    }
-    return done(null, user);
-  } catch (err) {
-    return done(err, false);
-  }
-}));
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser(async (id, done) => {
-  const user = await User.findById(id);
-  done(null, user);
-});
-
-app.use((req, res, next) => {
-  res.locals.success = req.flash("success");
-  res.locals.error = req.flash("error");
-  res.locals.currUser = req.user;
+app.use((req,res,next)=>{
+  res.locals.success=req.flash("success");
+  res.locals.error=req.flash("error");
+  res.locals.currUser=req.user;
   next();
 });
 
-app.use("/listings", listingRouter);
-app.use("/listings/:id/reviews", reviewRouter);
-app.use("/", userRouter);
+/*app.get("/demouser",async(req,res)=>{
+  let fakeUser= new User({
+    email:"student@gmail.com",
+    username:"ajay-juyal"
+  });
+  let registeredUser = await User.register(fakeUser,"helloworld");
+  res.send(registeredUser);
+}); */
 
-app.get('/auth/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
-);
 
-app.get('/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/' }),
-  (req, res) => {
-    res.redirect('/dashboard'); // Redirect to the desired route after successful login
-  }
-);
+app.use("/listings",listingRouter);
+app.use("/listings/:id/reviews",reviewRouter);
+app.use("/",userRouter);
 
 app.all('*', (req, res, next) => {
   next(new ExpressError(404, 'Page Not Found!'));
 });
-
 app.use((err, req, res, next) => {
   const { statusCode = 500, message = "Something went wrong" } = err;
-  res.status(statusCode).render("error", { message });
+  res.status(statusCode).render("error.ejs",{message});
+  //res.status(statusCode).send(message);
 });
+// ... (other middleware and configuration)
+app.use(methodOverride('_method'));
 
-const port = process.env.PORT || 8080;
-app.listen(port, () => {
-  console.log(`Server is listening on port ${port}`);
+app.listen(8080, () => {
+  console.log("Server is listening on port 8080");
 });

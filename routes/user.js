@@ -1,7 +1,7 @@
 ﻿const express = require("express");
 const passport = require("passport");
 const User = require("../models/user");
-const catchAsync = require("../utils/catchAsync");
+const wrapAsync = require("../utils/wrapAsync");
 const router = express.Router();
 
 // Render Signup Form
@@ -10,7 +10,7 @@ router.get("/signup", (req, res) => {
 });
 
 // Handle Signup Logic
-router.post("/signup", catchAsync(async (req, res, next) => {
+router.post("/signup", wrapAsync(async (req, res, next) => {
   try {
     const { username, email, password } = req.body;
     const user = new User({ username, email });

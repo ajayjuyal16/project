@@ -14,12 +14,7 @@ const flash = require("connect-flash");
 const passport = require("passport");
 const LocalStrategy = require("passport-local");
 const User = require("./models/user.js");
-
-// Set mongoose options before connecting
-mongoose.set('useNewUrlParser', true);
-mongoose.set('useUnifiedTopology', true);
-mongoose.set('useCreateIndex', true);
-mongoose.set('strictQuery', false); // Set strictQuery to false to suppress warning
+const MongoStore = require("connect-mongo");
 
 const listingRouter = require("./routes/listing.js");
 const reviewRouter = require("./routes/review.js");
@@ -37,7 +32,11 @@ main()
   });
 
 async function main() {
-  await mongoose.connect(dbUrl);
+  await mongoose.connect(dbUrl, {
+    useUnifiedTopology: true,
+    useNewUrlParser: true,
+    useCreateIndex: true // Ensure index creation to avoid deprecation warnings
+  });
 }
 
 app.set("view engine", "ejs");
@@ -55,7 +54,8 @@ const store = session({
     ttl: 24 * 60 * 60, // Time to live for the session (1 day)
     crypto: {
       secret: process.env.SECRET
-    }
+    },
+    touchAfter: 24 * 3600 // Time period in seconds
   }),
   resave: false,
   saveUninitialized: true,
@@ -64,6 +64,10 @@ const store = session({
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   }
+});
+
+store.on("error", (err) => {
+  console.log("ERROR in MONGO SESSION Store", err);
 });
 
 app.use(store);

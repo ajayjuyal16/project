@@ -1,28 +1,63 @@
-﻿const express= require("express");
-const router=express.Router();
-const User= require("../models/user.js");
-const wrapAsync= require("../utils/wrapAsync.js");
-const passport= require("passport");
-const {saveRedirectUrl}=require("../middleware.js");
-const userController= require("../controllers/user.js");
+﻿const express = require("express");
+const passport = require("passport");
+const User = require("../models/user");
+const catchAsync = require("../utils/catchAsync");
+const router = express.Router();
 
+// Render Signup Form
+router.get("/signup", (req, res) => {
+  res.render("signup");
+});
 
-router
-  .route("/signup")
-  .get(userController.renderSignupForm)
-  .post(wrapAsync(userController.signup));
+// Handle Signup Logic
+router.post("/signup", catchAsync(async (req, res, next) => {
+  try {
+    const { username, email, password } = req.body;
+    const user = new User({ username, email });
+    const registeredUser = await User.register(user, password);
+    req.login(registeredUser, err => {
+      if (err) return next(err);
+      req.flash("success", "Welcome to StayHub!");
+      res.redirect("/listings");
+    });
+  } catch (e) {
+    req.flash("error", e.message);
+    res.redirect("/signup");
+  }
+}));
 
+// Render Login Form
+router.get("/login", (req, res) => {
+  res.render("login");
+});
 
-router 
-  .route("/login")
-  .get(userController.renderLoginForm)
-  .post( saveRedirectUrl,
-     passport.authenticate("local",
-       {failureRedirect:'/login',
-       failureFlash:true}),
-       userController.login);
-   
+// Handle Login Logic
+router.post("/login", passport.authenticate("local", {
+  failureFlash: true,
+  failureRedirect: "/login"
+}), (req, res) => {
+  req.flash("success", "Welcome back!");
+  res.redirect("/listings");
+});
 
-router.get("/logout",userController.logout);
+// Logout
+router.get("/logout", (req, res) => {
+  req.logout();
+  req.flash("success", "Goodbye!");
+  res.redirect("/");
+});
 
-module.exports=router;
+// Google OAuth Login
+router.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+router.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  (req, res) => {
+    req.flash("success", "Welcome back!");
+    res.redirect('/listings');
+  }
+);
+
+module.exports = router;

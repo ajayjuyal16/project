@@ -13,6 +13,7 @@ const session = require("express-session");
 const flash = require("connect-flash");
 const passport = require("passport");
 const LocalStrategy = require("passport-local");
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const User = require("./models/user.js");
 const MongoStore = require("connect-mongo");
 
@@ -27,7 +28,7 @@ main()
     console.log("Connected to DB");
   })
   .catch((err) => {
-    console.error("Error connecting to MongoDB", err);
+    console.error("Error connecting to MooDB", err);
     process.exit(1); // Exit the process if MongoDB connection fails
   });
 
@@ -46,17 +47,15 @@ app.use(methodOverride("_method"));
 app.engine('ejs', ejsMate);
 app.use(express.static(path.join(__dirname, "public")));
 
-const store = session({
+const store = MongoStore.create({
+  mongoUrl: dbUrl,
+  touchAfter: 24 * 3600 // Time period in seconds
+});
+
+app.use(session({
   name: 'session',
   secret: process.env.SECRET,
-  store: MongoStore.create({
-    mongoUrl: dbUrl,
-    ttl: 24 * 60 * 60, // Time to live for the session (1 day)
-    crypto: {
-      secret: process.env.SECRET
-    },
-    touchAfter: 24 * 3600 // Time period in seconds
-  }),
+  store: store,
   resave: false,
   saveUninitialized: true,
   cookie: {
@@ -64,18 +63,39 @@ const store = session({
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   }
-});
+}));
 
 store.on("error", (err) => {
   console.log("ERROR in MONGO SESSION Store", err);
 });
 
-app.use(store);
 app.use(flash());
 
 app.use(passport.initialize());
 app.use(passport.session());
+
 passport.use(new LocalStrategy(User.authenticate()));
+
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: "http://localhost:8080/auth/google/callback"
+}, async (token, tokenSecret, profile, done) => {
+  try {
+    let user = await User.findOne({ googleId: profile.id });
+    if (!user) {
+      user = new User({
+        googleId: profile.id,
+        username: profile.displayName,
+        email: profile.emails[0].value
+      });
+      await user.save();
+    }
+    return done(null, user);
+  } catch (err) {
+    return done(err, false);
+  }
+}));
 
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
@@ -90,6 +110,17 @@ app.use((req, res, next) => {
 app.use("/listings", listingRouter);
 app.use("/listings/:id/reviews", reviewRouter);
 app.use("/", userRouter);
+
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/' }),
+  (req, res) => {
+    res.redirect('/dashboard');
+  }
+);
 
 app.all('*', (req, res, next) => {
   next(new ExpressError(404, 'Page Not Found!'));
